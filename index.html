@@ -1,0 +1,2116 @@
+```javascript
+/*
+  Hesap Merkezi
+  Frontend uygulaması
+
+  Cloudflare Worker adresini burada değiştir:
+*/
+const API_BASE = "https://SENIN-WORKER-ADRESIN.workers.dev";
+
+const tools = [
+  ["HESAPLAMA","🧮","Yüzde Hesaplama","Yüzde, artış ve azalış","percent"],
+  ["HESAPLAMA","🎂","Yaş Hesaplama","Doğum tarihinden yaş","age"],
+  ["HESAPLAMA","📅","Tarih Hesaplama","İki tarih arasındaki süre","date"],
+  ["HESAPLAMA","🔢","Matematik Hesaplama","Matematik işlemleri","math"],
+  ["HESAPLAMA","📏","Birim Dönüştürücü","Uzunluk, ağırlık, hacim","unit"],
+
+  ["FİNANS","💰","Maaş Hesaplama","Brüt maaş hesaplama","salary"],
+  ["FİNANS","💳","Kredi Hesaplama","Taksit ve toplam ödeme","credit"],
+  ["FİNANS","📈","Faiz Hesaplama","Bileşik faiz","interest"],
+  ["FİNANS","💱","Döviz","Güncel döviz","currency"],
+  ["FİNANS","🪙","Altın","Altın verileri","gold"],
+
+  ["EĞİTİM","🎓","Not Ortalaması","Not ortalaması","grade"],
+  ["EĞİTİM","🎓","OBP Hesaplama","Diploma notu ve OBP","obp"],
+  ["EĞİTİM","📝","TYT Hesaplama","TYT netleri","tyt"],
+  ["EĞİTİM","📝","AYT Hesaplama","AYT netleri","ayt"],
+  ["EĞİTİM","🏫","LGS Hesaplama","LGS netleri","lgs"],
+
+  ["GÜNLÜK YAŞAM","🌦️","Hava Durumu","Güncel hava","weather"],
+  ["GÜNLÜK YAŞAM","⏰","Geri Sayım","Tarihe kalan süre","countdown"],
+  ["GÜNLÜK YAŞAM","🗓️","Takvim","Aylık takvim","calendar"],
+  ["GÜNLÜK YAŞAM","🇹🇷","Resmî Tatiller","Türkiye tatilleri","holidays"],
+  ["GÜNLÜK YAŞAM","🕌","Namaz Vakitleri","Güncel namaz vakitleri","prayer"],
+
+  ["GÜNDEM & SPOR","⚽","Spor Merkezi","Maçlar ve sonuçlar","sports"],
+  ["GÜNDEM & SPOR","📰","Gündem","Güncel haberler","news"],
+
+  ["TEKNOLOJİ","📡","İnternet Hız Testi","Bağlantı testi","speed"],
+  ["TEKNOLOJİ","📱","QR Kod","QR oluştur","qr"],
+  ["TEKNOLOJİ","🔐","Şifre Oluşturucu","Güçlü şifre","password"],
+
+  ["DOSYA","📄","PDF Araçları","PDF işlemleri","pdf"],
+  ["DOSYA","🖼️","Resim Araçları","Resim boyutlandır","image"],
+  ["DOSYA","✍️","Metin Araçları","Kelime ve karakter","text"],
+
+  ["YAPAY ZEKA","🤖","Jarvis AI","AI sohbet","ai"],
+  ["YAPAY ZEKA","🎙️","Jarvis Sesli Asistan","Sesli komut","voice"]
+];
+
+const categoryNames = {
+  "HESAPLAMA":"🧮 Hesaplama",
+  "FİNANS":"💰 Finans",
+  "EĞİTİM":"🎓 Eğitim",
+  "GÜNLÜK YAŞAM":"🌤️ Günlük Yaşam",
+  "GÜNDEM & SPOR":"🏆 Gündem & Spor",
+  "TEKNOLOJİ":"💻 Teknoloji",
+  "DOSYA":"📄 Dosya & Medya",
+  "YAPAY ZEKA":"🤖 Yapay Zeka"
+};
+
+function $(id){
+  return document.getElementById(id);
+}
+
+function escapeHtml(value){
+  return String(value).replace(/[&<>"']/g,m=>({
+    "&":"&amp;",
+    "<":"&lt;",
+    ">":"&gt;",
+    '"':"&quot;",
+    "'":"&#039;"
+  })[m]);
+}
+
+/* ------------------------------
+   ANA SAYFA
+------------------------------ */
+
+function renderTools(){
+  const container=$("categories");
+  const groups={};
+
+  tools.forEach(tool=>{
+    if(!groups[tool[0]]) groups[tool[0]]=[];
+    groups[tool[0]].push(tool);
+  });
+
+  container.innerHTML="";
+
+  Object.entries(groups).forEach(([cat,list])=>{
+    const section=document.createElement("section");
+    section.className="category";
+
+    section.innerHTML=`
+      <div class="category-title">
+        <h2>${categoryNames[cat]}</h2>
+        <span>${list.length} araç</span>
+      </div>
+      <div class="grid"></div>
+    `;
+
+    const grid=section.querySelector(".grid");
+
+    list.forEach(tool=>{
+      const card=document.createElement("div");
+      card.className="card";
+      card.dataset.search=(tool[2]+" "+tool[3]).toLocaleLowerCase("tr-TR");
+
+      card.innerHTML=`
+        <div class="emoji">${tool[1]}</div>
+        <h3>${tool[2]}</h3>
+        <p>${tool[3]}</p>
+      `;
+
+      card.onclick=()=>openTool(tool[4]);
+      grid.appendChild(card);
+    });
+
+    container.appendChild(section);
+  });
+}
+
+function openTool(id){
+  document.querySelectorAll(".tool").forEach(x=>x.classList.remove("active"));
+
+  const tool=$(id);
+
+  if(!tool) return;
+
+  tool.classList.add("active");
+
+  tool.scrollIntoView({
+    behavior:"smooth",
+    block:"start"
+  });
+
+  localStorage.setItem("lastTool",id);
+
+  if(id==="calendar") drawCalendar();
+  if(id==="currency") currencyCalc();
+  if(id==="news") loadNews();
+}
+
+function showHome(){
+  document.querySelectorAll(".tool").forEach(x=>x.classList.remove("active"));
+  window.scrollTo({top:0,behavior:"smooth"});
+}
+
+/* ------------------------------
+   TEMA
+------------------------------ */
+
+function toggleDarkMode(){
+  document.body.classList.toggle("dark");
+
+  localStorage.setItem(
+    "darkMode",
+    document.body.classList.contains("dark")
+  );
+}
+
+if(localStorage.getItem("darkMode")==="true"){
+  document.body.classList.add("dark");
+}
+
+/* ------------------------------
+   ARAMA
+------------------------------ */
+
+function searchTools(query){
+  query=query.toLocaleLowerCase("tr-TR").trim();
+
+  document.querySelectorAll(".card").forEach(card=>{
+    card.style.display=
+      !query || card.dataset.search.includes(query)
+      ?"block"
+      :"none";
+  });
+}
+
+$("globalSearch").addEventListener("input",e=>{
+  searchTools(e.target.value);
+});
+
+function smartSearch(){
+  const q=$("smartSearch").value
+    .trim()
+    .toLocaleLowerCase("tr-TR");
+
+  if(!q)return;
+
+  const nums=q.match(/\d+(?:[.,]\d+)?/g);
+
+  if(q.includes("yüzde") && nums && nums.length>=2){
+    $("percentNum").value=nums[0].replace(",",".");
+    $("percentRate").value=nums[1].replace(",",".");
+    percentCalc();
+    openTool("percent");
+    return;
+  }
+
+  const found=tools.find(t=>
+    (t[2]+" "+t[3])
+      .toLocaleLowerCase("tr-TR")
+      .includes(q)
+  );
+
+  if(found){
+    openTool(found[4]);
+    return;
+  }
+
+  $("globalSearch").value=q;
+  searchTools(q);
+
+  const visible=[...document.querySelectorAll(".card")]
+    .filter(x=>x.style.display!=="none");
+
+  if(visible.length===1){
+    visible[0].click();
+  }
+}
+
+/* ------------------------------
+   YÜZDE
+------------------------------ */
+
+function percentCalc(){
+  const n=Number($("percentNum").value);
+  const p=Number($("percentRate").value);
+
+  if(!Number.isFinite(n)||!Number.isFinite(p)){
+    $("percentResult").textContent="Geçerli değer gir.";
+    return;
+  }
+
+  const value=n*p/100;
+
+  $("percentResult").innerHTML=`
+    <strong>${n} sayısının %${p} değeri:</strong>
+    ${value}
+    <br>
+    Artış: ${n+value}
+    <br>
+    Azalış: ${n-value}
+  `;
+}
+
+/* ------------------------------
+   YAŞ
+------------------------------ */
+
+function ageCalc(){
+  const value=$("birthDate").value;
+
+  if(!value){
+    $("ageResult").textContent="Doğum tarihi seç.";
+    return;
+  }
+
+  const birth=new Date(value+"T00:00:00");
+  const now=new Date();
+
+  let years=now.getFullYear()-birth.getFullYear();
+  let months=now.getMonth()-birth.getMonth();
+
+  if(
+    months<0 ||
+    (months===0 && now.getDate()<birth.getDate())
+  ){
+    years--;
+  }
+
+  $("ageResult").innerHTML=`Yaşın: <strong>${years}</strong> yıl`;
+}
+
+/* ------------------------------
+   TARİH
+------------------------------ */
+
+function dateCalc(){
+  const a=new Date($("date1").value);
+  const b=new Date($("date2").value);
+
+  if(isNaN(a)||isNaN(b)){
+    $("dateResult").textContent="İki tarih seç.";
+    return;
+  }
+
+  const days=Math.abs(
+    Math.round((b-a)/86400000)
+  );
+
+  $("dateResult").textContent=
+    `İki tarih arasında ${days} gün var.`;
+}
+
+/* ------------------------------
+   MATEMATİK
+------------------------------ */
+
+function mathCalc(){
+  const expression=$("mathInput").value.trim();
+
+  if(!expression){
+    $("mathResult").textContent="İşlem gir.";
+    return;
+  }
+
+  if(!/^[0-9+\-*/().%\s]+$/.test(expression)){
+    $("mathResult").textContent="Geçersiz ifade.";
+    return;
+  }
+
+  try{
+    const result=Function(
+      `"use strict"; return (${expression})`
+    )();
+
+    $("mathResult").textContent="Sonuç: "+result;
+  }catch{
+    $("mathResult").textContent="Hesaplanamadı.";
+  }
+}
+
+/* ------------------------------
+   BİRİM
+------------------------------ */
+
+const factors={
+  m:1,
+  km:1000,
+  cm:.01,
+  mm:.001,
+  kg:1,
+  g:.001,
+  l:1,
+  ml:.001
+};
+
+const groups=[
+  ["m","km","cm","mm"],
+  ["kg","g"],
+  ["l","ml"]
+];
+
+function unitCalc(){
+  const value=Number($("unitValue").value);
+  const from=$("unitFrom").value;
+  const to=$("unitTo").value;
+
+  const compatible=groups.some(
+    group=>group.includes(from)&&group.includes(to)
+  );
+
+  if(!compatible){
+    $("unitResult").textContent=
+      "Bu iki birim birbirine dönüştürülemez.";
+    return;
+  }
+
+  const result=value*factors[from]/factors[to];
+
+  $("unitResult").textContent=
+    `${value} ${from} = ${result} ${to}`;
+}
+
+/* ------------------------------
+   MAAŞ
+------------------------------ */
+
+function salaryCalc(){
+  const value=Number($("salaryGross").value);
+
+  if(value<=0){
+    $("salaryResult").textContent="Brüt maaş gir.";
+    return;
+  }
+
+  $("salaryResult").innerHTML=`
+    Brüt maaş:
+    <strong>${value.toLocaleString("tr-TR")} TL</strong>
+    <br>
+    Net maaş; vergi, SGK ve diğer yasal parametrelere göre değişir.
+  `;
+}
+
+/* ------------------------------
+   KREDİ
+------------------------------ */
+
+function creditCalc(){
+  const P=Number($("creditAmount").value);
+  const rate=Number($("creditRate").value)/100;
+  const n=Number($("creditMonths").value);
+
+  if(P<=0||n<=0){
+    $("creditResult").textContent="Bilgileri doldur.";
+    return;
+  }
+
+  const payment=
+    rate===0
+    ?P/n
+    :P*rate*Math.pow(1+rate,n)/
+     (Math.pow(1+rate,n)-1);
+
+  const total=payment*n;
+
+  $("creditResult").innerHTML=`
+    Aylık taksit:
+    <strong>${payment.toLocaleString("tr-TR",{maximumFractionDigits:2})}</strong>
+    <br>
+    Toplam ödeme:
+    ${total.toLocaleString("tr-TR",{maximumFractionDigits:2})}
+    <br>
+    Toplam faiz:
+    ${(total-P).toLocaleString("tr-TR",{maximumFractionDigits:2})}
+  `;
+}
+
+/* ------------------------------
+   FAİZ
+------------------------------ */
+
+function interestCalc(){
+  const P=Number($("interestPrincipal").value);
+  const r=Number($("interestRate").value)/100;
+  const t=Number($("interestYears").value);
+
+  if(P<=0||t<=0){
+    $("interestResult").textContent="Bilgileri doldur.";
+    return;
+  }
+
+  const total=P*Math.pow(1+r,t);
+
+  $("interestResult").innerHTML=`
+    Toplam:
+    <strong>${total.toLocaleString("tr-TR",{maximumFractionDigits:2})}</strong>
+    <br>
+    Getiri:
+    ${(total-P).toLocaleString("tr-TR",{maximumFractionDigits:2})}
+  `;
+}
+
+/* ------------------------------
+   DÖVİZ
+------------------------------ */
+
+async function currencyCalc(){
+  const amount=Number($("currencyAmount").value)||1;
+  const from=$("currencyFrom").value;
+  const to=$("currencyTo").value;
+
+  $("currencyResult").textContent="Güncel kur getiriliyor...";
+
+  try{
+    const response=await fetch(
+      `${API_BASE}/api/currency?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`
+    );
+
+    const data=await response.json();
+
+    if(!response.ok) throw new Error(data.error);
+
+    const value=amount*data.rate;
+
+    $("currencyResult").innerHTML=`
+      <strong>1 ${from} = ${data.rate} ${to}</strong>
+      <br>
+      ${amount} ${from} =
+      <strong>${value.toLocaleString("tr-TR",{maximumFractionDigits:4})} ${to}</strong>
+      <br>
+      <small>Kaynak: ${escapeHtml(data.source||"API")}</small>
+    `;
+  }catch(error){
+    $("currencyResult").textContent=
+      "Kur verisi alınamadı. Worker adresini kontrol et.";
+  }
+}
+
+/* ------------------------------
+   ALTIN
+------------------------------ */
+
+async function goldCalc(){
+  $("goldResult").textContent="Altın verisi getiriliyor...";
+
+  try{
+    const response=await fetch(
+      `${API_BASE}/api/gold`
+    );
+
+    const data=await response.json();
+
+    if(!response.ok) throw new Error(data.error);
+
+    $("goldResult").innerHTML=`
+      <strong>Altın verisi</strong><br>
+      ${escapeHtml(JSON.stringify(data))}
+    `;
+  }catch{
+    $("goldResult").textContent=
+      "Altın API'sinden veri alınamadı.";
+  }
+}
+
+/* ------------------------------
+   NOT
+------------------------------ */
+
+function gradeCalc(){
+  const values=$("grades").value
+    .split(/[,;\s]+/)
+    .map(Number)
+    .filter(Number.isFinite);
+
+  if(!values.length){
+    $("gradeResult").textContent="Not gir.";
+    return;
+  }
+
+  const average=
+    values.reduce((a,b)=>a+b,0)/values.length;
+
+  $("gradeResult").innerHTML=
+    `Ortalama: <strong>${average.toFixed(2)}</strong>`;
+}
+
+/* ------------------------------
+   OBP
+------------------------------ */
+
+function obpCalc(){
+  const diploma=Number($("diploma").value);
+
+  if(diploma<0||diploma>100){
+    $("obpResult").textContent=
+      "0-100 arasında diploma notu gir.";
+    return;
+  }
+
+  $("obpResult").innerHTML=
+    `OBP: <strong>${(diploma*5).toFixed(2)}</strong>`;
+}
+
+/* ------------------------------
+   TYT
+------------------------------ */
+
+function net(correct,wrong){
+  return Number(correct||0)-Number(wrong||0)/4;
+}
+
+function tytCalc(){
+  const turkce=net(
+    $("tytTurkce").value,
+    $("tytTurkceYan").value
+  );
+
+  const mat=net(
+    $("tytMat").value,
+    $("tytMatYan").value
+  );
+
+  const sos=net(
+    $("tytSos").value,
+    $("tytSosYan").value
+  );
+
+  const fen=net(
+    $("tytFen").value,
+    $("tytFenYan").value
+  );
+
+  const total=turkce+mat+sos+fen;
+
+  $("tytResult").innerHTML=`
+    Türkçe: ${turkce.toFixed(2)}<br>
+    Matematik: ${mat.toFixed(2)}<br>
+    Sosyal: ${sos.toFixed(2)}<br>
+    Fen: ${fen.toFixed(2)}<br>
+    <strong>Toplam net: ${total.toFixed(2)}</strong>
+  `;
+}
+
+/* ------------------------------
+   AYT / LGS
+------------------------------ */
+
+function parseNets(inputId,resultId){
+  const text=$(inputId).value;
+
+  const regex=
+    /([^:\n]+):?\s*(\d+(?:[.,]\d+)?)\s*(?:doğru|D)\s*,?\s*(\d+(?:[.,]\d+)?)\s*(?:yanlış|Y)/gi;
+
+  const results=[];
+  let match;
+
+  while((match=regex.exec(text))!==null){
+    const correct=Number(match[2].replace(",","."));
+    const wrong=Number(match[3].replace(",","."));
+    const value=correct-wrong/4;
+
+    results.push(
+      `${escapeHtml(match[1].trim())}: ${value.toFixed(2)} net`
+    );
+  }
+
+  $(resultId).innerHTML=results.length
+    ?results.join("<br>")
+    :"Örnek format: Matematik: 30 doğru, 5 yanlış";
+}
+
+/* ------------------------------
+   HAVA
+------------------------------ */
+
+async function weatherInfo(){
+  const city=$("city").value.trim();
+
+  if(!city){
+    $("weatherResult").textContent="Şehir gir.";
+    return;
+  }
+
+  $("weatherResult").textContent="Hava durumu getiriliyor...";
+
+  try{
+    const response=await fetch(
+      `${API_BASE}/api/weather?city=${encodeURIComponent(city)}`
+    );
+
+    const data=await response.json();
+
+    if(!response.ok) throw new Error(data.error);
+
+    $("weatherResult").innerHTML=`
+      <strong>${escapeHtml(data.city)}</strong><br>
+      🌡️ ${data.temperature}°C<br>
+      💨 Rüzgar: ${data.wind} km/sa<br>
+      📍 ${data.latitude}, ${data.longitude}
+    `;
+  }catch{
+    $("weatherResult").textContent=
+      "Hava durumu alınamadı. Şehir adını veya Worker bağlantısını kontrol et.";
+  }
+}
+
+/* ------------------------------
+   GERİ SAYIM
+------------------------------ */
+
+let countdownTimer=null;
+
+function startCountdown(){
+  clearInterval(countdownTimer);
+
+  const target=new Date($("countTarget").value).getTime();
+
+  if(!target){
+    $("countResult").textContent="Tarih seç.";
+    return;
+  }
+
+  function update(){
+    const diff=target-Date.now();
+
+    if(diff<=0){
+      clearInterval(countdownTimer);
+      $("countResult").textContent="Süre doldu.";
+      return;
+    }
+
+    const days=Math.floor(diff/86400000);
+    const hours=Math.floor(diff/3600000)%24;
+    const mins=Math.floor(diff/60000)%60;
+    const secs=Math.floor(diff/1000)%60;
+
+    $("countResult").textContent=
+      `${days} gün ${hours} saat ${mins} dakika ${secs} saniye`;
+  }
+
+  update();
+  countdownTimer=setInterval(update,1000);
+}
+
+/* ------------------------------
+   TAKVİM
+------------------------------ */
+
+let calendarDate=new Date();
+
+function drawCalendar(){
+  const year=calendarDate.getFullYear();
+  const month=calendarDate.getMonth();
+
+  $("calendarTitle").textContent=
+    calendarDate.toLocaleDateString("tr-TR",{
+      month:"long",
+      year:"numeric"
+    });
+
+  const firstDay=
+    (new Date(year,month,1).getDay()+6)%7;
+
+  const days=
+    new Date(year,month+1,0).getDate();
+
+  let html="<table><thead><tr>";
+
+  ["Pzt","Sal","Çar","Per","Cum","Cmt","Paz"]
+    .forEach(day=>{
+      html+=`<th>${day}</th>`;
+    });
+
+  html+="</tr></thead><tbody><tr>";
+
+  for(let i=0;i<firstDay;i++){
+    html+="<td></td>";
+  }
+
+  const today=new Date();
+
+  for(let day=1;day<=days;day++){
+    const isToday=
+      day===today.getDate() &&
+      month===today.getMonth() &&
+      year===today.getFullYear();
+
+    html+=`
+      <td class="${isToday?"today":""}">
+        ${day}
+      </td>
+    `;
+
+    if((firstDay+day)%7===0){
+      html+="</tr><tr>";
+    }
+  }
+
+  html+="</tr></tbody></table>";
+
+  $("calendarBox").innerHTML=html;
+}
+
+function changeMonth(amount){
+  calendarDate.setMonth(
+    calendarDate.getMonth()+amount
+  );
+
+  drawCalendar();
+}
+
+/* ------------------------------
+   RESMİ TATİLLER
+------------------------------ */
+
+async function loadHolidays(){
+  const year=$("holidayYear").value;
+
+  $("holidayResult").textContent=
+    "Tatiller getiriliyor...";
+
+  try{
+    const response=await fetch(
+      `${API_BASE}/api/holidays?year=${year}`
+    );
+
+    const data=await response.json();
+
+    if(!response.ok) throw new Error(data.error);
+
+    $("holidayResult").innerHTML=
+      data.holidays.map(h=>`
+        <div>
+          🇹🇷 <strong>${escapeHtml(h.name)}</strong>
+          <br>
+          ${escapeHtml(h.date)}
+        </div>
+      `).join("<hr>");
+  }catch{
+    $("holidayResult").textContent=
+      "Resmî tatil verisi alınamadı.";
+  }
+}
+
+/* ------------------------------
+   NAMAZ
+------------------------------ */
+
+async function loadPrayer(){
+  const city=$("prayerCity").value.trim();
+
+  if(!city)return;
+
+  $("prayerResult").textContent=
+    "Namaz vakitleri getiriliyor...";
+
+  try{
+    const response=await fetch(
+      `${API_BASE}/api/prayer?city=${encodeURIComponent(city)}`
+    );
+
+    const data=await response.json();
+
+    if(!response.ok) throw new Error(data.error);
+
+    $("prayerResult").innerHTML=`
+      <strong>${escapeHtml(data.city)}</strong>
+      <hr>
+      İmsak: ${data.timings.Fajr}<br>
+      Güneş: ${data.timings.Sunrise}<br>
+      Öğle: ${data.timings.Dhuhr}<br>
+      İkindi: ${data.timings.Asr}<br>
+      Akşam: ${data.timings.Maghrib}<br>
+      Yatsı: ${data.timings.Isha}
+    `;
+  }catch{
+    $("prayerResult").textContent=
+      "Namaz vakitleri alınamadı.";
+  }
+}
+
+/* ------------------------------
+   SPOR
+------------------------------ */
+
+async function loadSports(){
+  const league=$("sportLeague").value;
+
+  $("sportsResult").textContent=
+    "Maçlar getiriliyor...";
+
+  try{
+    const response=await fetch(
+      `${API_BASE}/api/sports?league=${encodeURIComponent(league)}`
+    );
+
+    const data=await response.json();
+
+    if(!response.ok) throw new Error(data.error);
+
+    $("sportsResult").innerHTML=
+      data.events.map(event=>`
+        <div style="padding:10px 0;border-bottom:1px solid var(--border)">
+          <strong>${escapeHtml(event.name)}</strong>
+          <br>
+          ${escapeHtml(event.status||"")}
+        </div>
+      `).join("");
+  }catch{
+    $("sportsResult").textContent=
+      "Spor verisi alınamadı.";
+  }
+}
+
+/* ------------------------------
+   HABER
+------------------------------ */
+
+async function loadNews(){
+  $("newsResult").textContent=
+    "Gündem getiriliyor...";
+
+  try{
+    const response=await fetch(
+      `${API_BASE}/api/news`
+    );
+
+    const data=await response.json();
+
+    if(!response.ok) throw new Error(data.error);
+
+    $("newsResult").innerHTML=
+      data.items.map(item=>`
+        <article>
+          <a href="${escapeHtml(item.url)}"
+             target="_blank"
+             rel="noopener noreferrer">
+             ${escapeHtml(item.title)}
+          </a>
+          <div>${escapeHtml(item.date||"")}</div>
+        </article>
+      `).join("");
+  }catch{
+    $("newsResult").textContent=
+      "Haber verisi alınamadı.";
+  }
+}
+
+/* ------------------------------
+   HIZ TESTİ
+------------------------------ */
+
+async function runSpeedTest(){
+  $("speedResult").textContent=
+    "Bağlantı ölçülüyor...";
+
+  try{
+    const start=performance.now();
+
+    const response=await fetch(
+      `${API_BASE}/api/speed?size=5000000&x=${Date.now()}`,
+      {cache:"no-store"}
+    );
+
+    const blob=await response.blob();
+
+    const elapsed=(performance.now()-start)/1000;
+
+    const bits=blob.size*8;
+    const mbps=bits/elapsed/1000000;
+
+    $("speedResult").innerHTML=`
+      📡 Yaklaşık indirme hızı:
+      <strong>${mbps.toFixed(2)} Mbps</strong>
+      <br>
+      <small>Sonuç; cihaz, tarayıcı, Wi-Fi ve sunucu koşullarından etkilenebilir.</small>
+    `;
+  }catch{
+    $("speedResult").textContent=
+      "Hız testi yapılamadı.";
+  }
+}
+
+/* ------------------------------
+   QR
+------------------------------ */
+
+function makeQR(){
+  const text=$("qrText").value.trim();
+
+  if(!text){
+    $("qrResult").textContent="Metin veya URL gir.";
+    return;
+  }
+
+  const url=
+    "https://api.qrserver.com/v1/create-qr-code/?size=300x300&data="+
+    encodeURIComponent(text);
+
+  $("qrResult").innerHTML=`
+    <img src="${url}" alt="QR kod">
+    <a href="${url}" target="_blank" rel="noopener">
+      QR'ı yeni sekmede aç
+    </a>
+  `;
+}
+
+/* ------------------------------
+   ŞİFRE
+------------------------------ */
+
+function makePassword(){
+  const length=Math.max(
+    6,
+    Math.min(100,Number($("passLength").value)||16)
+  );
+
+  const chars=
+    "ABCDEFGHIJKLMNOPQRSTUVWXYZ"+
+    "abcdefghijklmnopqrstuvwxyz"+
+    "0123456789!@#$%^&*()-_=+";
+
+  const values=new Uint32Array(length);
+  crypto.getRandomValues(values);
+
+  let password="";
+
+  for(let i=0;i<length;i++){
+    password+=chars[values[i]%chars.length];
+  }
+
+  $("passwordResult").textContent=password;
+}
+
+async function copyPass(){
+  const value=$("passwordResult").textContent;
+
+  if(!value)return;
+
+  try{
+    await navigator.clipboard.writeText(value);
+    alert("Şifre kopyalandı.");
+  }catch{
+    alert("Kopyalama başarısız.");
+  }
+}
+
+/* ------------------------------
+   RESİM
+------------------------------ */
+
+function resizeImage(){
+  const file=$("imageFile").files[0];
+  const width=Number($("imageWidth").value);
+  const height=Number($("imageHeight").value);
+
+  if(!file||!width||!height){
+    $("imageResult").textContent=
+      "Resim, genişlik ve yükseklik gir.";
+    return;
+  }
+
+  const img=new Image();
+  const url=URL.createObjectURL(file);
+
+  img.onload=()=>{
+    const canvas=document.createElement("canvas");
+
+    canvas.width=width;
+    canvas.height=height;
+
+    canvas
+      .getContext("2d")
+      .drawImage(img,0,0,width,height);
+
+    canvas.toBlob(blob=>{
+      const downloadUrl=URL.createObjectURL(blob);
+
+      $("imageResult").innerHTML=`
+        <a href="${downloadUrl}"
+           download="resim-yeniden-boyutlandirildi.png">
+           ⬇️ Resmi indir
+        </a>
+      `;
+
+      URL.revokeObjectURL(url);
+    },"image/png");
+  };
+
+  img.src=url;
+}
+
+/* ------------------------------
+   METİN
+------------------------------ */
+
+$("textInput").addEventListener("input",updateTextStats);
+
+function updateTextStats(){
+  const text=$("textInput").value;
+
+  $("words").textContent=
+    text.trim()?text.trim().split(/\s+/).length:0;
+
+  $("chars").textContent=text.length;
+
+  $("nospace").textContent=
+    text.replace(/\s/g,"").length;
+
+  $("sentences").textContent=
+    (text.match(/[.!?]+/g)||[]).length;
+}
+
+function upperText(){
+  $("textInput").value=
+    $("textInput").value.toLocaleUpperCase("tr-TR");
+
+  updateTextStats();
+}
+
+function lowerText(){
+  $("textInput").value=
+    $("textInput").value.toLocaleLowerCase("tr-TR");
+
+  updateTextStats();
+}
+
+/* ------------------------------
+   AI
+------------------------------ */
+
+async function aiMessage(){
+  const input=$("aiInput").value.trim();
+
+  if(!input)return;
+
+  addChat("user",input);
+  $("aiInput").value="";
+
+  addChat("bot","Düşünüyorum...");
+
+  try{
+    const response=await fetch(
+      `${API_BASE}/api/ai`,
+      {
+        method:"POST",
+        headers:{
+          "Content-Type":"application/json"
+        },
+        body:JSON.stringify({
+          message:input
+        })
+      }
+    );
+
+    const data=await response.json();
+
+    document.querySelector("#chat .msg.bot:last-child")
+      ?.remove();
+
+    if(!response.ok){
+      throw new Error(data.error);
+    }
+
+    addChat(
+      "bot",
+      data.reply
+    );
+
+  }catch{
+    document.querySelector("#chat .msg.bot:last-child")
+      ?.remove();
+
+    addChat(
+      "bot",
+      "AI bağlantısı kurulamadı. Worker adresini ve API Secret ayarını kontrol et."
+    );
+  }
+}
+
+function addChat(type,text){
+  const chat=$("chat");
+
+  const div=document.createElement("div");
+
+  div.className=
+    `msg ${type==="user"?"user":"bot"}`;
+
+  div.textContent=text;
+
+  chat.appendChild(div);
+
+  chat.scrollTop=chat.scrollHeight;
+}
+
+/* ------------------------------
+   SESLİ JARVIS
+------------------------------ */
+
+let recognition=null;
+
+function startVoice(){
+  const SpeechRecognition=
+    window.SpeechRecognition ||
+    window.webkitSpeechRecognition;
+
+  if(!SpeechRecognition){
+    alert(
+      "Tarayıcın sesli tanımayı desteklemiyor. Chrome veya Edge kullan."
+    );
+    return;
+  }
+
+  recognition=new SpeechRecognition();
+
+  recognition.lang="tr-TR";
+  recognition.interimResults=false;
+  recognition.continuous=false;
+
+  $("jarvisCircle").classList.add("listening");
+
+  addVoice(
+    "Jarvis",
+    "Dinliyorum..."
+  );
+
+  recognition.onresult=event=>{
+    const text=
+      event.results[0][0].transcript;
+
+    addVoice("Sen",text);
+
+    processVoice(text);
+  };
+
+  recognition.onerror=()=>{
+    addVoice(
+      "Jarvis",
+      "Sesini anlayamadım. Tekrar deneyebilirsin."
+    );
+
+    $("jarvisCircle")
+      .classList.remove("listening");
+  };
+
+  recognition.onend=()=>{
+    $("jarvisCircle")
+      .classList.remove("listening");
+  };
+
+  recognition.start();
+}
+
+function stopVoice(){
+  if(recognition){
+    recognition.stop();
+  }
+
+  $("jarvisCircle")
+    .classList.remove("listening");
+}
+
+function addVoice(who,text){
+  const chat=$("voiceChat");
+
+  const div=document.createElement("div");
+
+  div.className=
+    `msg ${who==="Sen"?"user":"bot"}`;
+
+  div.innerHTML=
+    `<strong>${who}:</strong> ${escapeHtml(text)}`;
+
+  chat.appendChild(div);
+  chat.scrollTop=chat.scrollHeight;
+}
+
+function speak(text){
+  if(!("speechSynthesis" in window))return;
+
+  speechSynthesis.cancel();
+
+  const utterance=
+    new SpeechSynthesisUtterance(text);
+
+  utterance.lang="tr-TR";
+  utterance.rate=.95;
+  utterance.pitch=1;
+
+  speechSynthesis.speak(utterance);
+}
+
+function processVoice(text){
+  const t=text.toLocaleLowerCase("tr-TR");
+
+  const numbers=
+    t.match(/\d+(?:[.,]\d+)?/g);
+
+  if(
+    t.includes("yüzde") &&
+    numbers &&
+    numbers.length>=2
+  ){
+    $("percentNum").value=
+      numbers[0].replace(",",".");
+    $("percentRate").value=
+      numbers[1].replace(",",".");
+
+    percentCalc();
+    openTool("percent");
+
+    const answer=
+      $("percentResult").textContent;
+
+    addVoice("Jarvis",answer);
+    speak(answer);
+    return;
+  }
+
+  if(
+    t.includes("hava") ||
+    t.includes("hava durumu")
+  ){
+    openTool("weather");
+
+    const city=t
+      .replace("hava durumu","")
+      .replace("hava","")
+      .trim();
+
+    if(city){
+      $("city").value=city;
+      weatherInfo();
+    }
+
+    const answer="Hava durumu aracını açtım.";
+
+    addVoice("Jarvis",answer);
+    speak(answer);
+    return;
+  }
+
+  if(
+    t.includes("qr") ||
+    t.includes("karekod")
+  ){
+    openTool("qr");
+
+    const answer="QR kod aracını açtım.";
+
+    addVoice("Jarvis",answer);
+    speak(answer);
+    return;
+  }
+
+  if(t.includes("şifre")){
+    openTool("password");
+
+    makePassword();
+
+    const answer=
+      "Şifre oluşturucuyu açtım.";
+
+    addVoice("Jarvis",answer);
+    speak(answer);
+    return;
+  }
+
+  if(t.includes("takvim")){
+    openTool("calendar");
+
+    const answer="Takvimi açtım.";
+
+    addVoice("Jarvis",answer);
+    speak(answer);
+    return;
+  }
+
+  if(t.includes("döviz")||t.includes("kur")){
+    openTool("currency");
+
+    const answer="Döviz aracını açtım.";
+
+    addVoice("Jarvis",answer);
+    speak(answer);
+    return;
+  }
+
+  if(t.includes("namaz")){
+    openTool("prayer");
+
+    const answer=
+      "Namaz vakitleri aracını açtım.";
+
+    addVoice("Jarvis",answer);
+    speak(answer);
+    return;
+  }
+
+  if(t.includes("spor")||t.includes("maç")){
+    openTool("sports");
+
+    const answer="Spor merkezini açtım.";
+
+    addVoice("Jarvis",answer);
+    speak(answer);
+    return;
+  }
+
+  if(t.includes("haber")||t.includes("gündem")){
+    openTool("news");
+
+    const answer="Gündem bölümünü açtım.";
+
+    addVoice("Jarvis",answer);
+    speak(answer);
+    return;
+  }
+
+  /*
+    Anlaşılmayan konuşmaları AI'ya gönder.
+  */
+
+  aiVoiceRequest(text);
+}
+
+async function aiVoiceRequest(text){
+  addVoice("Jarvis","Bir saniye...");
+
+  try{
+    const response=await fetch(
+      `${API_BASE}/api/ai`,
+      {
+        method:"POST",
+        headers:{
+          "Content-Type":"application/json"
+        },
+        body:JSON.stringify({
+          message:text
+        })
+      }
+    );
+
+    const data=await response.json();
+
+    if(!response.ok)throw new Error();
+
+    addVoice("Jarvis",data.reply);
+    speak(data.reply);
+  }catch{
+    const answer=
+      "Bu komutu şu anda işleyemedim.";
+
+    addVoice("Jarvis",answer);
+    speak(answer);
+  }
+}
+
+/* ------------------------------
+   PROFİL
+------------------------------ */
+
+function openProfile(){
+  $("profileModal").classList.remove("hidden");
+
+  $("profileName").value=
+    localStorage.getItem("profileName")||"";
+
+  $("profileFavorite").value=
+    localStorage.getItem("profileFavorite")||
+    "percent";
+}
+
+function closeProfile(){
+  $("profileModal").classList.add("hidden");
+}
+
+function saveProfile(){
+  const name=$("profileName").value.trim();
+  const favorite=$("profileFavorite").value;
+
+  localStorage.setItem("profileName",name);
+  localStorage.setItem("profileFavorite",favorite);
+
+  $("profileResult").textContent=
+    `Profil kaydedildi${name?`, ${name}`:""}.`;
+
+  setTimeout(closeProfile,800);
+}
+
+/* ------------------------------
+   BAŞLANGIÇ
+------------------------------ */
+
+renderTools();
+drawCalendar();
+
+window.addEventListener("load",()=>{
+  const favorite=
+    localStorage.getItem("profileFavorite");
+
+  if(favorite){
+    /*
+      Profil kaydı varsa araç hazır.
+    */
+  }
+});
+```
+```javascript
+/*
+=========================================================
+ HESAP MERKEZİ - CLOUDFLARE WORKER
+=========================================================
+
+Gerekli Cloudflare Secrets:
+
+OPENAI_API_KEY
+
+İsteğe bağlı:
+
+ALLOWED_ORIGIN
+=========================================================
+*/
+
+const CORS_HEADERS = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
+  "Access-Control-Allow-Headers": "Content-Type",
+  "Content-Type": "application/json; charset=UTF-8"
+};
+
+function json(data,status=200){
+  return new Response(
+    JSON.stringify(data),
+    {
+      status,
+      headers:CORS_HEADERS
+    }
+  );
+}
+
+function error(message,status=500){
+  return json(
+    {error:message},
+    status
+  );
+}
+
+function cors(){
+  return new Response(null,{
+    status:204,
+    headers:CORS_HEADERS
+  });
+}
+
+export default {
+  async fetch(request,env){
+
+    if(request.method==="OPTIONS"){
+      return cors();
+    }
+
+    const url=new URL(request.url);
+    const path=url.pathname;
+
+    try{
+
+      /*
+      ----------------------------------------------
+      HEALTH
+      ----------------------------------------------
+      */
+
+      if(path==="/" || path==="/health"){
+        return json({
+          ok:true,
+          service:"Hesap Merkezi API",
+          time:new Date().toISOString()
+        });
+      }
+
+      /*
+      ----------------------------------------------
+      WEATHER
+      Open-Meteo
+      ----------------------------------------------
+      */
+
+      if(path==="/api/weather"){
+        const city=
+          url.searchParams.get("city")||
+          "Istanbul";
+
+        const geoResponse=
+          await fetch(
+            "https://geocoding-api.open-meteo.com/v1/search"+
+            "?name="+encodeURIComponent(city)+
+            "&count=1"+
+            "&language=tr"+
+            "&format=json"
+          );
+
+        const geo=await geoResponse.json();
+
+        if(
+          !geo.results ||
+          !geo.results.length
+        ){
+          return error(
+            "Şehir bulunamadı.",
+            404
+          );
+        }
+
+        const place=geo.results[0];
+
+        const weatherResponse=
+          await fetch(
+            "https://api.open-meteo.com/v1/forecast"+
+            "?latitude="+place.latitude+
+            "&longitude="+place.longitude+
+            "&current=temperature_2m,wind_speed_10m"+
+            "&timezone=auto"
+          );
+
+        const weather=
+          await weatherResponse.json();
+
+        return json({
+          city:place.name,
+          country:place.country,
+          latitude:place.latitude,
+          longitude:place.longitude,
+          temperature:
+            weather.current?.temperature_2m,
+          wind:
+            weather.current?.wind_speed_10m
+        });
+      }
+
+      /*
+      ----------------------------------------------
+      CURRENCY
+      Frankfurter
+      ----------------------------------------------
+      */
+
+      if(path==="/api/currency"){
+
+        const from=
+          (url.searchParams.get("from")||"TRY")
+          .toUpperCase();
+
+        const to=
+          (url.searchParams.get("to")||"USD")
+          .toUpperCase();
+
+        if(from===to){
+          return json({
+            rate:1,
+            source:"same currency"
+          });
+        }
+
+        /*
+          Frankfurter bazı para birimleri için
+          doğrudan TRY sağlayabilir.
+        */
+
+        const response=
+          await fetch(
+            `https://api.frankfurter.app/latest?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`
+          );
+
+        const data=await response.json();
+
+        if(
+          !response.ok ||
+          !data.rates ||
+          typeof data.rates[to]!=="number"
+        ){
+          return error(
+            "Kur bulunamadı.",
+            502
+          );
+        }
+
+        return json({
+          rate:data.rates[to],
+          date:data.date,
+          source:"Frankfurter"
+        });
+      }
+
+      /*
+      ----------------------------------------------
+      GOLD
+      ----------------------------------------------
+
+      Altın fiyatları tek bir ücretsiz ve
+      değişmez kamu API'sine güvenli şekilde
+      bağlanmadığı için sahte fiyat üretmiyoruz.
+
+      İstersen daha sonra bir altın veri sağlayıcısının
+      Secret API key'i eklenebilir.
+      ----------------------------------------------
+      */
+
+      if(path==="/api/gold"){
+        return json({
+          available:false,
+          message:
+            "Altın için güvenilir canlı veri sağlayıcısı yapılandırılmalıdır."
+        },503);
+      }
+
+      /*
+      ----------------------------------------------
+      PRAYER
+      Aladhan API
+      ----------------------------------------------
+      */
+
+      if(path==="/api/prayer"){
+
+        const city=
+          url.searchParams.get("city")||
+          "Istanbul";
+
+        const country="Turkey";
+
+        const now=new Date();
+
+        const day=
+          String(now.getDate()).padStart(2,"0");
+
+        const month=
+          String(now.getMonth()+1).padStart(2,"0");
+
+        const year=
+          now.getFullYear();
+
+        const response=
+          await fetch(
+            `https://api.aladhan.com/v1/timingsByCity/${day}-${month}-${year}?city=${encodeURIComponent(city)}&country=${country}&method=13`
+          );
+
+        const data=await response.json();
+
+        if(
+          !response.ok ||
+          !data.data
+        ){
+          return error(
+            "Namaz vakitleri alınamadı.",
+            502
+          );
+        }
+
+        return json({
+          city,
+          date:data.data.date,
+          timings:data.data.timings
+        });
+      }
+
+      /*
+      ----------------------------------------------
+      HOLIDAYS
+      Türkiye 2026 resmi tatilleri
+      ----------------------------------------------
+
+      Günler Türkiye resmi tatil takvimine göre
+      sabit takvim olarak tutuluyor.
+
+      2027 ve sonrası için veri sağlayıcı eklenebilir.
+      ----------------------------------------------
+      */
+
+      if(path==="/api/holidays"){
+
+        const year=
+          Number(url.searchParams.get("year"))||
+          new Date().getFullYear();
+
+        const holidays2026=[
+          {
+            date:"2026-01-01",
+            name:"Yılbaşı"
+          },
+          {
+            date:"2026-03-20",
+            name:"Ramazan Bayramı Arifesi"
+          },
+          {
+            date:"2026-03-21",
+            name:"Ramazan Bayramı 1. Gün"
+          },
+          {
+            date:"2026-03-22",
+            name:"Ramazan Bayramı 2. Gün"
+          },
+          {
+            date:"2026-03-23",
+            name:"Ramazan Bayramı 3. Gün"
+          },
+          {
+            date:"2026-04-23",
+            name:"Ulusal Egemenlik ve Çocuk Bayramı"
+          },
+          {
+            date:"2026-05-01",
+            name:"Emek ve Dayanışma Günü"
+          },
+          {
+            date:"2026-05-19",
+            name:"Atatürk'ü Anma, Gençlik ve Spor Bayramı"
+          },
+          {
+            date:"2026-05-26",
+            name:"Kurban Bayramı Arifesi"
+          },
+          {
+            date:"2026-05-27",
+            name:"Kurban Bayramı 1. Gün"
+          },
+          {
+            date:"2026-05-28",
+            name:"Kurban Bayramı 2. Gün"
+          },
+          {
+            date:"2026-05-29",
+            name:"Kurban Bayramı 3. Gün"
+          },
+          {
+            date:"2026-05-30",
+            name:"Kurban Bayramı 4. Gün"
+          },
+          {
+            date:"2026-07-15",
+            name:"Demokrasi ve Millî Birlik Günü"
+          },
+          {
+            date:"2026-08-30",
+            name:"Zafer Bayramı"
+          },
+          {
+            date:"2026-10-29",
+            name:"Cumhuriyet Bayramı"
+          }
+        ];
+
+        if(year===2026){
+          return json({
+            year,
+            holidays:holidays2026
+          });
+        }
+
+        return json({
+          year,
+          holidays:[]
+        });
+      }
+
+      /*
+      ----------------------------------------------
+      SPORTS
+      ESPN public scoreboard endpoint
+      ----------------------------------------------
+      */
+
+      if(path==="/api/sports"){
+
+        const league=
+          url.searchParams.get("league")||
+          "eng.1";
+
+        const response=
+          await fetch(
+            `https://site.api.espn.com/apis/site/v2/sports/soccer/${encodeURIComponent(league)}/scoreboard`
+          );
+
+        const data=await response.json();
+
+        if(
+          !response.ok ||
+          !Array.isArray(data.events)
+        ){
+          return error(
+            "Spor verisi alınamadı.",
+            502
+          );
+        }
+
+        const events=
+          data.events.map(event=>({
+            name:event.name,
+            status:event.status?.type?.detail ||
+                   event.status?.type?.description ||
+                   "",
+            date:event.date
+          }));
+
+        return json({
+          league,
+          events
+        });
+      }
+
+      /*
+      ----------------------------------------------
+      NEWS
+      Google News RSS
+      ----------------------------------------------
+      */
+
+      if(path==="/api/news"){
+
+        const rssUrl=
+          "https://news.google.com/rss?hl=tr&gl=TR&ceid=TR:tr";
+
+        const response=
+          await fetch(rssUrl);
+
+        const xml=
+          await response.text();
+
+        if(!response.ok){
+          return error(
+            "Haber kaynağına ulaşılamadı.",
+            502
+          );
+        }
+
+        const items=[];
+
+        const matches=
+          [...xml.matchAll(
+            /<item>([\s\S]*?)<\/item>/gi
+          )];
+
+        for(const match of matches.slice(0,15)){
+
+          const item=match[1];
+
+          const title=
+            getXmlValue(item,"title");
+
+          const link=
+            getXmlValue(item,"link");
+
+          const date=
+            getXmlValue(item,"pubDate");
+
+          if(title){
+            items.push({
+              title,
+              url:link,
+              date
+            });
+          }
+        }
+
+        return json({
+          source:"Google News RSS",
+          items
+        });
+      }
+
+      /*
+      ----------------------------------------------
+      SPEED TEST
+      ----------------------------------------------
+      */
+
+      if(path==="/api/speed"){
+
+        const requested=
+          Number(url.searchParams.get("size"))||
+          5000000;
+
+        const size=
+          Math.min(
+            Math.max(requested,100000),
+            10000000
+          );
+
+        /*
+          Rastgele veri üretip cache etkisini azaltıyoruz.
+        */
+
+        const bytes=
+          new Uint8Array(size);
+
+        crypto.getRandomValues(
+          bytes.subarray(
+            0,
+            Math.min(size,65536)
+          )
+        );
+
+        /*
+          Geri kalan kısmı hızlı doldur.
+        */
+
+        for(
+          let i=65536;
+          i<size;
+          i+=65536
+        ){
+          bytes.set(
+            bytes.subarray(
+              0,
+              Math.min(65536,size-i)
+            ),
+            i
+          );
+        }
+
+        return new Response(
+          bytes,
+          {
+            status:200,
+            headers:{
+              ...CORS_HEADERS,
+              "Content-Type":
+                "application/octet-stream",
+              "Cache-Control":
+                "no-store, no-cache, must-revalidate"
+            }
+          }
+        );
+      }
+
+      /*
+      ----------------------------------------------
+      AI
+      OpenAI-compatible Chat Completions endpoint
+      ----------------------------------------------
+      */
+
+      if(
+        path==="/api/ai" &&
+        request.method==="POST"
+      ){
+
+        if(!env.OPENAI_API_KEY){
+          return error(
+            "OPENAI_API_KEY Cloudflare Secret olarak eklenmemiş.",
+            500
+          );
+        }
+
+        const body=
+          await request.json();
+
+        const message=
+          String(body.message||"").trim();
+
+        if(!message){
+          return error(
+            "Mesaj boş.",
+            400
+          );
+        }
+
+        const response=
+          await fetch(
+            "https://api.openai.com/v1/chat/completions",
+            {
+              method:"POST",
+              headers:{
+                "Authorization":
+                  `Bearer ${env.OPENAI_API_KEY}`,
+                "Content-Type":
+                  "application/json"
+              },
+              body:JSON.stringify({
+                model:"gpt-4o-mini",
+                messages:[
+                  {
+                    role:"system",
+                    content:
+                      "Sen Hesap Merkezi sitesinin Jarvis tarzı Türkçe asistanısın. Kısa, yardımsever ve anlaşılır cevaplar ver. Kullanıcıya hesaplama, araç seçimi ve site kullanımı konusunda yardımcı ol."
+                  },
+                  {
+                    role:"user",
+                    content:message
+                  }
+                ],
+                temperature:.5,
+                max_tokens:500
+              })
+            }
+          );
+
+        const data=
+          await response.json();
+
+        if(!response.ok){
+          return error(
+            data?.error?.message||
+            "AI servisi hata verdi.",
+            502
+          );
+        }
+
+        const reply=
+          data?.choices?.[0]?.message?.content||
+          "Şu anda cevap oluşturamadım.";
+
+        return json({
+          reply
+        });
+      }
+
+      return error(
+        "Endpoint bulunamadı.",
+        404
+      );
+
+    }catch(err){
+
+      return error(
+        err?.message||
+        "Sunucu hatası.",
+        500
+      );
+    }
+  }
+};
+
+
+/*
+=========================================================
+ XML yardımcı fonksiyonu
+=========================================================
+*/
+
+function getXmlValue(xml,tag){
+
+  const regex=
+    new RegExp(
+      `<${tag}[^>]*>([\\\\s\\\\S]*?)<\\\\/${tag}>`,
+      "i"
+    );
+
+  const match=
+    xml.match(regex);
+
+  if(!match)return "";
+
+  return decodeXml(
+    match[1]
+      .replace("<![CDATA[","")
+      .replace("]]>","")
+      .trim()
+  );
+}
+
+function decodeXml(value){
+
+  return value
+    .replace(/&amp;/g,"&")
+    .replace(/&lt;/g,"<")
+    .replace(/&gt;/g,">")
+    .replace(/&quot;/g,'"')
+    .replace(/&#39;/g,"'");
+}
+```
+
